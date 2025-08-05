@@ -1,14 +1,15 @@
 package sk.hruby.michal.usersandpolicies.persistence;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.AllArgsConstructor;
-import lombok.SneakyThrows;
 import org.springframework.stereotype.Repository;
 import sk.hruby.michal.usersandpolicies.evaluation.Policy;
 import sk.hruby.michal.usersandpolicies.evaluation.PolicyRule;
 import sk.hruby.michal.usersandpolicies.evaluation.rules.PolicyRuleFactoryRegistry;
 import sk.hruby.michal.usersandpolicies.exception.AlreadyExistsException;
+import sk.hruby.michal.usersandpolicies.exception.InvalidJsonException;
 import sk.hruby.michal.usersandpolicies.exception.NotFoundException;
 
 import java.util.List;
@@ -24,20 +25,17 @@ public class PolicyRepositoryAdapter implements PolicyRepository {
 
     private final ObjectMapper objectMapper = new ObjectMapper();
 
-    //todo ucesat
     @Override
     public Optional<Policy> findByUniqueId(String userFriendlyId) {
         return this.policyRepository.findByUniqueId(userFriendlyId).map((PolicyEntity policyEntity) -> mapToDomainPolicy(policyEntity, policyRuleFactoryRegistry));
     }
 
-    //todo ucesat
     @Override
     public Policy findByUniqueIdOrThrowException(String userFriendlyId) {
         return this.findByUniqueId(userFriendlyId).
                 orElseThrow(() -> new NotFoundException("Policy with id " + userFriendlyId + " was not found!"));
     }
 
-    //todo ucesat
     private PolicyEntity findByUniqueIdOrThrowException2(String userFriendlyId) {
         return this.policyRepository.findByUniqueId(userFriendlyId).
                 orElseThrow(() -> new NotFoundException("Policy with id " + userFriendlyId + " was not found!"));
@@ -77,13 +75,17 @@ public class PolicyRepositoryAdapter implements PolicyRepository {
         this.policyRepository.delete(policyEntity);
     }
 
-    @SneakyThrows//code smell
     private Policy mapToDomainPolicy(final PolicyEntity policyEntity, PolicyRuleFactoryRegistry factoryRegistry) {
         Policy policy = new Policy();
         policy.setId(policyEntity.getUniqueId());
         policy.setName(policyEntity.getName());
 
-        JsonNode jsonNode = objectMapper.readTree(policyEntity.getJson());
+        JsonNode jsonNode;
+        try {
+            jsonNode = objectMapper.readTree(policyEntity.getJson());
+        } catch (JsonProcessingException e) {
+            throw new InvalidJsonException(e.getMessage());
+        }
 
         PolicyRule rule = factoryRegistry.createRule(jsonNode);
         policy.setPolicyRule(rule);
@@ -96,10 +98,14 @@ public class PolicyRepositoryAdapter implements PolicyRepository {
         return this.createPolicyEntity(policyEntity, policy);
     }
 
-    @SneakyThrows//TODO code smell
     private PolicyEntity createPolicyEntity(final PolicyEntity policyEntity, final Policy policy) {
         policyEntity.setName(policy.getName());
-        String jsonString = objectMapper.writeValueAsString(policy.getPolicyRule().getJson());
+        String jsonString;
+        try {
+            jsonString = objectMapper.writeValueAsString(policy.getPolicyRule().getJson());
+        } catch (JsonProcessingException e) {
+            throw new InvalidJsonException(e.getMessage());
+        }
         policyEntity.setJson(jsonString);
         return policyEntity;
     }
